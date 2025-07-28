@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Concert Compass",
+  "version": "1.0.1",
+  "description": "Discover concerts for your favorite artists using Spotify",
+  "action": {
+    "default_popup": "index.html"
+  },
+  "permissions": ["identity", "storage"],
+  "icons": {
+  "16": "icons/icon-128.png",
+  "48": "icons/icon-128.png",
+  "128": "icons/icon-128.png"
+}
+}
