@@ -1,0 +1,1 @@
+const client_id = import.meta.env.VITE_SPOTIFY_CLIENT_ID
