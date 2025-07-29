@@ -4,6 +4,10 @@ export default function App() {
   const [token, setToken] = useState(null);
   const [topArtists, setTopArtists] = useState([]);
   const [redirectUri, setRedirectUri] = useState('');
+  const [pinnedArtist, setPinnedArtist] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [artistInput, setArtistInput] = useState("");
+  const [searchError, setSearchError] = useState(null);
 
   const clientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID;
   console.log("Client ID:", clientId);
@@ -20,6 +24,8 @@ export default function App() {
   const loginWithSpotify = () => {
     
     if (!redirectUri) return;
+
+    setLoading(true)
 
     const authUrl =
       `https://accounts.spotify.com/authorize` +
@@ -67,10 +73,11 @@ fetch("https://concert-compass-backend.onrender.com/api/token", {
 })
 .catch(error => {
   console.error("Token exchange failed:", error);
-});
+})
+.finally(() => setLoading(false))
 
 });
-  };
+};
 
   // Load token on mount (if saved from earlier session)
   useEffect(() => {
@@ -79,6 +86,12 @@ fetch("https://concert-compass-backend.onrender.com/api/token", {
         setToken(result.spotifyToken);
       }
     });
+
+    chrome.storage.local.get('pinnedArtists', (result) => {
+      if(result.pinnedArtists){
+        setPinnedArtist(result.pinnedArtists)
+      }
+    })
   }, []);
 
   //Fetch top artists when token becomes available
@@ -101,9 +114,12 @@ fetch("https://concert-compass-backend.onrender.com/api/token", {
       })
       .then((data) => {
         if (data?.items) {
-          const artistNames = data.items.map((artist) => artist.name);
-          setTopArtists(artistNames);
-          chrome.storage.local.set({ topArtists: artistNames });
+          const artistObjects = data.items.map((artist) => ({
+            name: artist.name,
+            image: artist.images?.[0]?.url || null,
+          }));
+          setTopArtists(artistObjects);
+          chrome.storage.local.set({ topArtists: artistObjects });
         }
       })
       .catch((err) => {
@@ -111,65 +127,226 @@ fetch("https://concert-compass-backend.onrender.com/api/token", {
       });
   }, [token]);
 
+  const pinArtist = (artist) => {
+  const updatedPins = [...pinnedArtist, artist].filter(
+    (a, i, self) => i === self.findIndex((x) => x.name === a.name) // Remove duplicates
+  );
+
+  setPinnedArtist(updatedPins);
+  chrome.storage.local.set({ pinnedArtists: updatedPins });
+};
+
+const unpinArtist = (artist) => {
+  const updatedPins = pinnedArtist.filter((a) => a.name !== artist.name);
+  const updatedTop = [...topArtists, artist].filter(
+    (a, i, self) => i === self.findIndex((x) => x.name === a.name) // remove duplicates
+  );
+
+  setPinnedArtist(updatedPins);
+  setTopArtists(updatedTop);
+
+  chrome.storage.local.set({
+    pinnedArtists: updatedPins,
+    topArtists: updatedTop,
+  });
+};
+
+const searchAndPin = async () => {
+  if (!artistInput.trim() || !token) return;
+
+  const query = artistInput.trim();
+  setSearchError(null); // reset previous errors
+
+  try {
+    const res = await fetch(
+      `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=artist&limit=5`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const data = await res.json();
+    console.log("Spotify Search Response:", data);
+
+    if (!data.artists || !data.artists.items) {
+      setSearchError("Unexpected response from Spotify.");
+      return;
+    }
+
+    const match = data.artists.items.find(
+      (item) => item.name.toLowerCase() === query.toLowerCase()
+    );
+
+    if (!match) {
+      setSearchError("Artist not found.");
+      return;
+    }
+
+    const artistData = {
+      name: match.name,
+      image: match.images?.[0]?.url || null,
+    };
+
+    // Avoid duplicates
+    if (!pinnedArtist.some((a) => a.name === artistData.name)) {
+      const updatedPins = [...pinnedArtist, artistData];
+      setPinnedArtist(updatedPins);
+      setTopArtists((prev) => prev.filter((a) => a.name !== artistData.name));
+      chrome.storage.local.set({ pinnedArtists: updatedPins });
+      setArtistInput(""); // clear input
+      setSearchError(null); // clear error
+    } else {
+      setSearchError("Artist already pinned.");
+    }
+
+  } catch (error) {
+    console.error("Error searching artist:", error);
+    setSearchError("Error searching artist.");
+  }
+};
+
+const removeTopArtist = (artistToRemove) => {
+  const updatedTop = topArtists.filter(
+    (artist) => artist.name !== artistToRemove.name
+  );
+  setTopArtists(updatedTop);
+  chrome.storage.local.set({ topArtists: updatedTop });
+};
+
+
+
+
+
   return (
-    <div className="w-[350px] min-h-[500px] bg-black p-4 text-white rounded-2xl font-sans">
-      <h1 className="text-xl font-bold mb-7 text-center">Concert Compass</h1>
+    <div className="w-[350px] min-h-[520px] bg-[#0e0e0e] p-5 text-white rounded-2xl font-sans shadow-lg">
+      <h1 className="text-2xl font-bold mb-2 text-center">Concert Compass</h1>
 
       {!token ? (
         <button
-          className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-2 rounded-full mb-7"
+          className="w-full bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-600 hover:to-purple-700 text-white font-medium py-2 rounded-full mb-7"
           onClick={loginWithSpotify}
         >
-          Connect to Spotify
+          {loading ? 'Connecting...' : 'Connect to Spotify'}
         </button>
       ) : (
-        <p className="text-sm text-green-400 mb-4 text-center">
+        <p className="text-center text-sm text-pink-400 mb-6">
           Connected to Spotify
         </p>
       )}
 
-      <div className="mb-4">
-        <form className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Add artist name"
-            className="flex-1 px-3 py-2 rounded-full bg-white/20 text-sm"
-          />
-          <button
-            type="submit"
-            className="bg-green-400 hover:bg-green-700 text-black hover:text-white px-3 py-2 rounded-full text-sm"
-          >
-            Add
-          </button>
-        </form>
+      <div className="flex mb-6 bg-white/10 rounded-full p-2">
+      <div className="relative flex-1">
+        <span className="absolute left-3 top-2.5 text-gray-400 text-sm">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path d="M21 21l-4.35-4.35m0 0A7.5 7.5 0 1 0 3 10.5a7.5 7.5 0 0 0 13.65 6.15z" />
+          </svg>
+        </span>
+        <input
+          type="text"
+          value={artistInput}
+          onChange={(e) => setArtistInput(e.target.value)}
+          placeholder="Add an artist..."
+          className="w-full pl-9 pr-3 py-2 rounded-full bg-[#1c1c1c] text-sm text-white focus:outline-none"
+        />
       </div>
+      <button
+  disabled={!artistInput.trim()}
+  className={`ml-2 px-4 py-2 text-sm font-semibold rounded-full 
+    bg-gradient-to-r from-pink-500 to-purple-600 
+    hover:from-pink-600 hover:to-purple-700
+    ${!artistInput.trim() ? "opacity-50 cursor-not-allowed" : ""}
+  `}
+  onClick={searchAndPin}
+>
+  Add
+</button>
+      
+    </div>
 
-      <div className="mb-4">
-        <h2 className="text-sm font-bold text-white mt-7 mb-2">Top Artists</h2>
-        {topArtists.length > 0 ? (
-          <ul className="bg-white/10 rounded-lg p-2 text-sm space-y-1">
-            {topArtists.map((artist, idx) => (
-              <li key={idx}>🎵 {artist}</li>
-            ))}
-          </ul>
+    {searchError && (<p className="text-xs text-red-400 mt-1">{searchError}</p>)}
+
+        <div className="mb-6">
+  <h2 className="text-sm font-semibold mb-2">Pinned Artists</h2>
+  <div className="bg-[#1a1a1a] rounded-xl p-3 space-y-2 shadow-inner">
+    {pinnedArtist.length > 0 ? (
+      pinnedArtist.map((artist, idx) => (
+        <div key={idx} className="flex items-center justify-between gap-3 text-sm">
+  <div className="flex items-center gap-3">
+    <img
+      src={artist.image || 'https://via.placeholder.com/32/ffffff/aaaaaa?text=🎵'}
+      alt={artist.name}
+      className="w-8 h-8 rounded-full object-cover"
+    />
+    <span>{artist.name}</span>
+  </div>
+  <button
+    onClick={() => unpinArtist(artist)}
+    className="text-xs px-2 py-1 bg-gray-600 hover:bg-gray-700 text-white rounded-full"
+  >
+    Unpin
+  </button>
+</div>
+
+      ))
+    ) : (
+      <div className="bg-[#1a1a1a] rounded-xl p-4 text-sm text-gray-400 flex items-center gap-2 justify-center text-center flex-col">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-7 h-7" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354m1.58 1.408-.002-.001zm-.002-.001.002.001A.5.5 0 0 1 6 2v5a.5.5 0 0 1-.276.447h-.002l-.012.007-.054.03a5 5 0 0 0-.827.58c-.318.278-.585.596-.725.936h7.792c-.14-.34-.407-.658-.725-.936a5 5 0 0 0-.881-.61l-.012-.006h-.002A.5.5 0 0 1 10 7V2a.5.5 0 0 1 .295-.458 1.8 1.8 0 0 0 .351-.271c.08-.08.155-.17.214-.271H5.14q.091.15.214.271a1.8 1.8 0 0 0 .37.282" />
+        </svg>
+        <p>No pinned artists yet.</p>
+        <p className="text-xs">Pin an artist to always see their concert info first.</p>
+      </div>
+    )}
+  </div>
+</div>
+
+      <div className="mb-6">
+        <h2 className="text-sm font-semibold mb-2">Top Artists</h2>
+        <div className='bg-[#1a1a1a] rounded-xl p-3 space-y-2 shadow-inner'>
+          {topArtists.length > 0 ? (
+            topArtists.map((artist, idx) => (
+              <div key={idx} className="flex items-center gap-3 text-sm">
+              <img
+                src={artist.image || 'https://via.placeholder.com/32/ffffff/aaaaaa?text=🎵'}
+                alt={artist.name}
+                className="w-8 h-8 rounded-full object-cover"
+              />
+              <span>{artist.name}</span>
+              <button
+              onClick={() => pinArtist(artist)}
+              >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={0.5} viewBox="0 0 24 24">
+          <path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354m1.58 1.408-.002-.001zm-.002-.001.002.001A.5.5 0 0 1 6 2v5a.5.5 0 0 1-.276.447h-.002l-.012.007-.054.03a5 5 0 0 0-.827.58c-.318.278-.585.596-.725.936h7.792c-.14-.34-.407-.658-.725-.936a5 5 0 0 0-.881-.61l-.012-.006h-.002A.5.5 0 0 1 10 7V2a.5.5 0 0 1 .295-.458 1.8 1.8 0 0 0 .351-.271c.08-.08.155-.17.214-.271H5.14q.091.15.214.271a1.8 1.8 0 0 0 .37.282" />
+        </svg>
+            </button>
+            <button className='text-transparent text-xs ml-3 rounded hover:text-red' onClick={() => removeTopArtist(artist)}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="bi bi-x" viewBox="0 0 16 16">
+  <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708"/>
+</svg>
+            </button>
+            </div>
+            ))
         ) : (
-          <div className="p-2 bg-white/10 rounded-full text-sm">
-            No top artists loaded yet.
-          </div>
+          <p className="text-sm text-gray-400">No top artists yet.</p>
         )}
-      </div>
-
-      <div className="mb-4">
-        <h2 className="text-sm font-bold text-white mt-7 mb-2">Pinned Artists</h2>
-        <div className="p-2 bg-white/10 rounded-full text-sm">No pinned artists yet.</div>
-      </div>
-
-      <div>
-        <h2 className="text-sm font-bold text-white mt-7 mb-2">Concert Info</h2>
-        <div className="bg-white/10 p-2 rounded-full text-sm">
-          Select an artist to see concerts.
         </div>
       </div>
+
+
+      <div>
+      <h2 className="text-sm font-semibold mb-2">Concert Info</h2>
+      <div className="bg-[#1a1a1a] rounded-xl p-4 text-sm text-gray-400 text-center flex items-center gap-2 justify-center">
+        <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path d="M12 13c0 1.105-1.12 2-2.5 2S7 14.105 7 13s1.12-2 2.5-2 2.5.895 2.5 2"/>
+          <path fill-rule="evenodd" d="M12 3v10h-1V3z"/>
+          <path d="M11 2.82a1 1 0 0 1 .804-.98l3-.6A1 1 0 0 1 16 2.22V4l-5 1z"/>
+          <path fill-rule="evenodd" d="M0 11.5a.5.5 0 0 1 .5-.5H4a.5.5 0 0 1 0 1H.5a.5.5 0 0 1-.5-.5m0-4A.5.5 0 0 1 .5 7H8a.5.5 0 0 1 0 1H.5a.5.5 0 0 1-.5-.5m0-4A.5.5 0 0 1 .5 3H8a.5.5 0 0 1 0 1H.5a.5.5 0 0 1-.5-.5"/>
+        </svg>
+        Select an artist to see their upcoming concerts.
+      </div>
+    </div>
     </div>
   );
 }
