@@ -12,6 +12,7 @@
   ],
   "host_permissions": [
     "https://accounts.spotify.com/*",
-    "https://api.spotify.com/*"
+    "https://api.spotify.com/*",
+    "https://concert-compass-backend.onrender.com/*"
   ]
 }

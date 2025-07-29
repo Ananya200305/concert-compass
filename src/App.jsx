@@ -49,7 +49,7 @@ export default function App() {
 
  const code = new URLSearchParams(new URL(redirectUrl).search).get("code");
 
-fetch("http://localhost:3000/api/token", {  
+fetch("https://concert-compass-backend.onrender.com/api/token", {  
   method: "POST",
   headers: {
     "Content-Type": "application/json"
