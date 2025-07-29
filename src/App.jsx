@@ -47,9 +47,28 @@ export default function App() {
   //   return;
   // }
 
-  const code = new URLSearchParams(new URL(redirectUrl).search).get("code");
-console.log("Authorization Code:", code);
-  chrome.storage.local.set({ accessCode: code });
+ const code = new URLSearchParams(new URL(redirectUrl).search).get("code");
+
+fetch("http://localhost:3000/api/token", {  
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    code,
+    redirectUri
+  })
+})
+.then(res => res.json())
+.then(data => {
+  const accessToken = data.access_token;
+  chrome.storage.local.set({ spotifyToken: accessToken });
+  setToken(accessToken);  // So top artists fetch immediately
+})
+.catch(error => {
+  console.error("Token exchange failed:", error);
+});
+
 });
   };
 
