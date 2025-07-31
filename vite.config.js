@@ -1,10 +1,11 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
-import { resolve } from 'path'
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import { resolve } from 'path';
+import { copyFileSync } from 'fs';
 
 export default defineConfig({
   plugins: [react()],
-  base: './',  
+  base: './',
   build: {
     outDir: 'dist',
     rollupOptions: {
@@ -18,4 +19,7 @@ export default defineConfig({
       },
     },
   },
-})
+  closeBundle() {
+    copyFileSync('src/background.js', 'dist/background.js');
+  },
+});

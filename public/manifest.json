@@ -12,11 +12,17 @@
   },
   "permissions": [
     "identity",
-    "storage"
+    "storage",
+    "alarms",
+    "notifications"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "host_permissions": [
     "https://accounts.spotify.com/*",
     "https://api.spotify.com/*",
-    "https://concert-compass-backend.onrender.com/*"
+    "https://concert-compass-backend.onrender.com/*",
+    "https://app.ticketmaster.com/*"
   ]
 }
