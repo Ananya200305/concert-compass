@@ -23,12 +23,20 @@ export default function App() {
     }
   }, []);
 
+  // useEffect(() => {
+  //   chrome.storage.local.get(['spotifyToken', 'pinnedArtists'], (result) => {
+  //     if (result.spotifyToken) setToken(result.spotifyToken);
+  //     if (result.pinnedArtists) setPinnedArtist(result.pinnedArtists);
+  //   });
+  // }, []);
+
   useEffect(() => {
-    chrome.storage.local.get(['spotifyToken', 'pinnedArtists'], (result) => {
-      if (result.spotifyToken) setToken(result.spotifyToken);
-      if (result.pinnedArtists) setPinnedArtist(result.pinnedArtists);
-    });
-  }, []);
+  chrome.storage.local.get(['spotifyToken', 'pinnedArtists', 'notifiedConcerts'], (result) => {
+    if (result.spotifyToken) setToken(result.spotifyToken);
+    if (result.pinnedArtists) setPinnedArtist(result.pinnedArtists);
+    if (result.notifiedConcerts) setNotifiedConcerts(result.notifiedConcerts);
+  });
+}, []);
 
   const loginWithSpotify = () => {
     if (!redirectUri) return;
@@ -68,7 +76,15 @@ export default function App() {
     fetch('https://api.spotify.com/v1/me/top/artists?limit=5', {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((res) => res.json())
+      .then((res) => {
+        if (res.status === 401) {
+          console.warn("Token expired or unauthorized.");
+          chrome.storage.local.remove('spotifyToken');
+          setToken(null);
+          return null;
+        }
+        return res.json();
+      })
       .then((data) => {
         if (data?.items) {
           const artists = data.items.map((artist) => ({
@@ -150,8 +166,8 @@ export default function App() {
 
   chrome.storage.local.set({ [notificationId]: event }, () => {
     chrome.alarms.create(notificationId, {
-      delayInMinutes: 1,      // for demo
-      periodInMinutes: 1440,  // daily
+      delayInMinutes: 0.5,     
+      periodInMinutes: 1440, 
     });
 
     const updated = [...notifiedConcerts, event];
@@ -213,13 +229,7 @@ const unnotify = (event) => {
     }
   }, [pinnedArtist]);
 
-  useEffect(() => {
-  chrome.storage.local.get(['spotifyToken', 'pinnedArtists', 'notifiedConcerts'], (result) => {
-    if (result.spotifyToken) setToken(result.spotifyToken);
-    if (result.pinnedArtists) setPinnedArtist(result.pinnedArtists);
-    if (result.notifiedConcerts) setNotifiedConcerts(result.notifiedConcerts);
-  });
-}, []);
+  
 
 
   return (
